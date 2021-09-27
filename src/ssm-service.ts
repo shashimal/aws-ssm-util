@@ -1,5 +1,5 @@
 import {SSM} from "aws-sdk";
-import {SSMConfig} from "./config/ssm-config";
+import {ISsmConfig} from "./config/ssm-config";
 import {ParameterList} from "aws-sdk/clients/ssm";
 import {json2csv} from "json-2-csv";
 import {createReadStream, mkdirSync, writeFileSync} from "fs";
@@ -8,13 +8,16 @@ import parse from "csv-parse";
 export class SsmService {
 
     private readonly ssm: SSM;
+    private readonly ssmParamsConfig: ISsmConfig;
 
-    constructor() {
+    constructor(ssmParamsConfig: ISsmConfig | undefined) {
+        this.ssmParamsConfig = ssmParamsConfig!;
+
         this.ssm = new SSM({
-            region: SSMConfig.region,
-            accessKeyId: SSMConfig.awsAccessKeyId,
-            secretAccessKey: SSMConfig.awsSecretAccessKey,
-            ...(SSMConfig.awsSessionToken && {sessionToken: SSMConfig.awsSessionToken}),
+            region: this.ssmParamsConfig?.region,
+            accessKeyId: this.ssmParamsConfig?.awsAccessKeyId,
+            secretAccessKey: this.ssmParamsConfig.awsSecretAccessKey,
+            ...(this.ssmParamsConfig.awsSessionToken && {sessionToken: this.ssmParamsConfig.awsSessionToken}),
         });
     }
 
@@ -22,9 +25,12 @@ export class SsmService {
     * Import SSM parameters by module
     *
     * */
-    public importSSMParameters = async (importData: any[]) => {
-        for (let importObj of importData) {
-            await this.readCSVFile(this.ssm, importObj);
+    public importSSMParameters = async (ssmParamsConfig: ISsmConfig | undefined) => {
+        const importData = this.ssmParamsConfig?.importParams;
+        if (importData && importData.length > 0) {
+            for (let importObj of importData) {
+                await this.readCSVFile(this.ssm, importObj);
+            }
         }
     }
 
@@ -32,12 +38,15 @@ export class SsmService {
     * Export SSM parameters by path
     *
     * */
-    public exportSSMParametersAsCSV = async (exportParamsPaths: string[]) => {
-        for (let path of exportParamsPaths) {
-            const parameters: ParameterList = await this.getParametersByPath(path);
+    public exportSSMParametersAsCSV = async () => {
+        const exportParams = this.ssmParamsConfig?.exportParams;
+        if (exportParams && exportParams.length > 0) {
+            for (let path of exportParams) {
+                const parameters: ParameterList = await this.getParametersByPath(path);
 
-            if (parameters && parameters.length > 0) {
-                this.writeToCsv(path, parameters);
+                if (parameters && parameters.length > 0) {
+                    this.writeToCsv(path, parameters);
+                }
             }
         }
     }
@@ -46,20 +55,23 @@ export class SsmService {
     * Delete SSM parameters by path
     *
     * */
-    public deleteSSMParameters = async (deleteData: any) => {
-        for (let deleteParam of deleteData) {
-            const param = {
-                Name: deleteParam
-            }
-            const response = await this.ssm.deleteParameter(param,
-                (error, data) => {
-                    if (error) {
-                        console.log(`❌ Failed to delete : ${error}`);
-                    } else {
-                        console.log(`✅  Deleted: ${deleteParam}`);
-                    }
+    public deleteSSMParameters = async () => {
+        const deleteData = this.ssmParamsConfig?.deleteParams;
+        if (deleteData && deleteData.length > 0) {
+            for (let deleteParam of deleteData) {
+                const param = {
+                    Name: deleteParam
                 }
-            );
+                const response = await this.ssm.deleteParameter(param,
+                    (error, data) => {
+                        if (error) {
+                            console.log(`❌ Failed to delete : ${error}`);
+                        } else {
+                            console.log(`✅  Deleted: ${deleteParam}`);
+                        }
+                    }
+                );
+            }
         }
     }
 
@@ -95,7 +107,7 @@ export class SsmService {
             .concat(".csv")
             .toLowerCase();
 
-        const location = `data/${SSMConfig.folder}/export/${SSMConfig.env}`;
+        const location = `data/${this.ssmParamsConfig.folder}/export/${this.ssmParamsConfig.env}`;
 
         mkdirSync(location, {recursive: true});
 
@@ -131,11 +143,12 @@ export class SsmService {
 
     private readCSVFile = async (ssmClient: SSM, fileObject: any) => {
         let csvData: any = [];
-        let count =0;
+        let count = 0;
         let failedCount = 0;
         let successCount = 0;
+        let ssmConfig = this.ssmParamsConfig;
 
-        const filePath = `data/${SSMConfig.folder}/import/${SSMConfig.env}/${fileObject.file}`;
+        const filePath = `data/${this.ssmParamsConfig.folder}/import/${this.ssmParamsConfig.env}/${fileObject.file}`;
 
         createReadStream(filePath)
             .pipe(parse({delimiter: ','}))
@@ -143,14 +156,14 @@ export class SsmService {
                 csvData.push(csvrow);
             })
             .on('end', async function () {
-                for (let i=1; i < csvData.length; i++) {
-                    const name = `/${SSMConfig.appName.toUpperCase()}/${SSMConfig.env.toUpperCase()}/${fileObject.module.toUpperCase()}/${csvData[i][0].toUpperCase()}`;
+                for (let i = 1; i < csvData.length; i++) {
+                    const name = `/${ssmConfig.appName.toUpperCase()}/${ssmConfig.env.toUpperCase()}/${fileObject.module.toUpperCase()}/${csvData[i][0].toUpperCase()}`;
                     const ssmParam = {
                         Name: name,
                         Value: csvData[i][1],
                         Tier: 'Standard',
                         Type: csvData[i][2],
-                        ...(csvData[i][2] === 'SecureString' && {KeyId: SSMConfig.kmsKeyId}),
+                        ...(csvData[i][2] === 'SecureString' && {KeyId: ssmConfig.kmsKeyId}),
                         Overwrite: true
                     }
 
