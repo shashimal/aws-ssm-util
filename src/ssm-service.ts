@@ -14,7 +14,7 @@ export class SsmService {
             region: SSMConfig.region,
             accessKeyId: SSMConfig.awsAccessKeyId,
             secretAccessKey: SSMConfig.awsSecretAccessKey,
-            ...(SSMConfig.kmsKeyId && {sessionToken: SSMConfig.awsSessionToken}),
+            ...(SSMConfig.awsSessionToken && {sessionToken: SSMConfig.awsSessionToken}),
         });
     }
 
@@ -118,6 +118,7 @@ export class SsmService {
             const paramPath = param.Name!.split("/");
 
             let csvObject = {
+                Module: paramPath[3],
                 Name: paramPath[paramPath.length - 1],
                 Value: param.Value,
                 Type: param.Type,
@@ -178,4 +179,5 @@ export interface CsvData {
     Name?: string,
     Type?: string,
     Value?: string,
+    Module?: string
 }
