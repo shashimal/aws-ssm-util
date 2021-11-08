@@ -1,6 +1,6 @@
 import {createReadStream, mkdirSync, writeFileSync} from "fs";
 import parse from "csv-parse";
-import {SSMConfig} from "./config/ssm-config";
+import {SSMConfig} from "../config/ssm-config";
 import {ParameterList} from "aws-sdk/clients/ssm";
 import {json2csv} from "json-2-csv";
 import * as fs from "fs";
