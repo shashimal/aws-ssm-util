@@ -24,7 +24,7 @@ export class SsmService {
     * */
     public importSSMParameters = async (importData: any[]) => {
         for (let importObj of importData) {
-            await this.readCSVFile(this.ssm, importObj);
+            await this.readCSVFile(this.ssm, importObj,this.sleep);
         }
     }
 
@@ -46,21 +46,9 @@ export class SsmService {
     * Delete SSM parameters by path
     *
     * */
-    public deleteSSMParameters = async (deleteData: any) => {
-        for (let deleteParam of deleteData) {
-            const param = {
-                Name: deleteParam
-            }
-            const response = await this.ssm.deleteParameter(param,
-                (error, data) => {
-                    if (error) {
-                        console.log(`❌ Failed to delete : ${error}`);
-                    } else {
-                        console.log(`✅  Deleted: ${deleteParam}`);
-                    }
-                }
-            );
-        }
+    public deleteSSMParameters = async (deleteParamsFile: string) => {
+
+        await this.deleteSSMParametersByPath(this.ssm, deleteParamsFile, this.sleep);
     }
 
     private getParametersByPath = async (path: string) => {
@@ -129,7 +117,11 @@ export class SsmService {
         return csvData;
     }
 
-    private readCSVFile = async (ssmClient: SSM, fileObject: any) => {
+    private sleep = (ms:number) => {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    };
+
+    private readCSVFile = async (ssmClient: SSM, fileObject: any, sleep: any) => {
         let csvData: any = [];
         let count =0;
         let failedCount = 0;
@@ -144,19 +136,20 @@ export class SsmService {
             })
             .on('end', async function () {
                 for (let i=1; i < csvData.length; i++) {
-                    const name = `/${SSMConfig.appName.toUpperCase()}/${SSMConfig.env.toUpperCase()}/${fileObject.module.toUpperCase()}/${csvData[i][0].toUpperCase()}`;
+                    const name = `/${SSMConfig.appName.toUpperCase()}/${SSMConfig.env.toUpperCase()}/${csvData[i][0].toUpperCase()}/${csvData[i][1].toUpperCase()}`;
                     const ssmParam = {
                         Name: name,
-                        Value: csvData[i][1],
+                        Value: csvData[i][2],
                         Tier: 'Standard',
-                        Type: csvData[i][2],
-                        ...(csvData[i][2] === 'SecureString' && {KeyId: SSMConfig.kmsKeyId}),
+                        Type: csvData[i][3],
+                        ...(csvData[i][3] === 'SecureString' && {KeyId: SSMConfig.kmsKeyId}),
                         Overwrite: true
                     }
-
+                    console.log(ssmParam);
                     try {
                         const data = await ssmClient.putParameter(ssmParam).promise();
                         successCount++;
+                        sleep(4000);
                         console.log(`✅  Imported Version ${data.Version}: ${name}`);
                     } catch (err) {
                         failedCount++;
@@ -170,6 +163,47 @@ export class SsmService {
                 console.log(`✅  Success Count for ${fileObject.module.toUpperCase()}: ${successCount}`);
                 console.log(`❌  Failed Count for ${fileObject.module.toUpperCase()}: ${failedCount}`);
                 console.log(`#######################################################################`);
+            });
+    }
+
+    private deleteSSMParametersByPath = async (ssmClient: SSM, file: any, sleep: any) => {
+        let csvData: any = [];
+        let count =0;
+        let failedCount = 0;
+        let successCount = 0;
+
+        const filePath = `data/${SSMConfig.folder}/delete/${SSMConfig.env}/${file}`;
+
+        createReadStream(filePath)
+            .pipe(parse({delimiter: ','}))
+            .on('data', function (csvrow) {
+                csvData.push(csvrow);
+            })
+            .on('end', async function () {
+                for (let i=1; i < csvData.length; i++) {
+                    const deleteParam = csvData[i];
+
+                    const param = {
+                        Name: deleteParam[0]
+                    }
+                   console.log(param);
+                    try {
+                        const response = await ssmClient.deleteParameter(param,
+                            (error, data) => {
+                                if (error) {
+                                    console.log(`❌ Failed to delete : ${error}`);
+                                } else {
+                                    console.log(`✅  Deleted: ${deleteParam}`);
+                                }
+                            }
+                        );
+                        sleep(4000);
+                    } catch (err) {
+                        failedCount++;
+                        console.log(`❌ Delete Error: ${err}`);
+                    }
+                    count++;
+                }
             });
     }
 }
